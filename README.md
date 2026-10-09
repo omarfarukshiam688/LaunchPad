@@ -104,7 +104,7 @@ This migration creates the `projects` table, Row Level Security
 policies, database permissions, an `updated_at` trigger, and the
 private `project-images` Storage bucket with its policies.
 
-**Recommended method — Supabase CLI:**
+**method 1  — Supabase CLI:**
 
 1. Log in to Supabase:
 
@@ -152,7 +152,8 @@ private `project-images` Storage bucket with its policies.
    Note: `npx supabase db reset` is only for a local Supabase
    development stack. Do not use it to set up your hosted project.
 
-**Alternative method — SQL Editor:**
+**Alternative method 2  — SQL Editor:**
+**Recommended**
 
 1. Open your own Supabase project in the dashboard.
 2. Open **SQL Editor** and start a new query.

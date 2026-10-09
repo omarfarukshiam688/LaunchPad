@@ -63,9 +63,22 @@ export async function getProjectImageUrls(
   const urls: Record<string, string> = {}
   if (data) {
     for (const result of data) {
-      if (result.signedURL && result.path) {
-        urls[result.path] = result.signedURL
+      // The batch API reports failures per object, so each
+      // entry is checked explicitly: a failed or missing
+      // signed URL must surface as an error instead of a
+      // silently broken thumbnail.
+      if (result.error) {
+        throw new Error(result.error)
       }
+      if (!result.path || !result.signedUrl) {
+        throw new Error(
+          'Could not retrieve a signed URL for a project image.'
+        )
+      }
+      // `signedUrl` is the complete absolute URL. The
+      // uppercase `signedURL` property is only a relative
+      // storage path and must not be used as an image source.
+      urls[result.path] = result.signedUrl
     }
   }
   return urls

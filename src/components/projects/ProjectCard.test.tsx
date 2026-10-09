@@ -26,58 +26,83 @@ function renderCard(actions?: ReactNode) {
       actions={actions}
     />
   )
-  return { anchor: screen.getByRole('link') }
+  // The card content area is the primary navigation link.
+  return {
+    mainLink: screen.getByRole('link', {
+      name: 'Open Storefy in a new tab',
+    }),
+    openProjectLink: screen.getByRole('link', { name: 'Open project' }),
+  }
 }
 
 describe('ProjectCard', () => {
-  it('renders a link that opens the project in a new tab', () => {
-    const { anchor } = renderCard()
+  it('renders the thumbnail from the signed image URL', () => {
+    renderCard()
 
-    expect(anchor).toHaveAttribute(
-      'href',
-      'https://storefy.vercel.app'
-    )
-    expect(anchor).toHaveAttribute('target', '_blank')
-    expect(anchor).toHaveAttribute(
-      'rel',
-      'noopener noreferrer'
-    )
-    expect(anchor).toHaveAttribute(
-      'aria-label',
-      'Open Storefy in a new tab'
+    const image = screen.getByRole('img', {
+      name: 'Storefy thumbnail',
+    })
+    expect(image).toHaveAttribute(
+      'src',
+      'https://signed.example/old-image.png'
     )
   })
 
-  it('navigates when the card itself is clicked', () => {
-    const { anchor } = renderCard()
+  it('renders a navigation link with safe external attributes', () => {
+    const { mainLink, openProjectLink } = renderCard()
+
+    for (const link of [mainLink, openProjectLink]) {
+      expect(link).toHaveAttribute(
+        'href',
+        'https://storefy.vercel.app'
+      )
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    }
+  })
+
+  it('navigates when the card content area is clicked', () => {
+    const { mainLink } = renderCard()
 
     // fireEvent reports whether the default action was
-    // prevented, so true means the anchor would navigate.
-    expect(fireEvent.click(anchor)).toBe(true)
+    // prevented, so true means the link would navigate.
+    expect(fireEvent.click(mainLink)).toBe(true)
   })
 
-  it('does not navigate when card actions are clicked', () => {
-    renderCard(<button type="button">Actions</button>)
+  it('navigates when the Open project link is clicked', () => {
+    const { openProjectLink } = renderCard()
 
-    expect(
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Actions' })
-      )
-    ).toBe(false)
+    expect(fireEvent.click(openProjectLink)).toBe(true)
   })
 
-  it('does not navigate when card actions are activated by keyboard', () => {
+  it('keeps card actions outside any navigation link', () => {
     renderCard(<button type="button">Actions</button>)
     const actionButton = screen.getByRole('button', {
       name: 'Actions',
     })
 
+    // Regression: actions must not be nested inside the
+    // card anchor, where clicks and keydowns leak to the
+    // navigation link.
+    expect(actionButton.closest('a')).toBeNull()
+  })
+
+  it('does not prevent card action clicks or keyboard activation', () => {
+    renderCard(<button type="button">Actions</button>)
+    const actionButton = screen.getByRole('button', {
+      name: 'Actions',
+    })
+
+    // Regression: the old wrapper called preventDefault on
+    // click, Enter and Space, which cancelled keyboard
+    // activation of the controls.
+    expect(fireEvent.click(actionButton)).toBe(true)
     expect(
       fireEvent.keyDown(actionButton, { key: 'Enter' })
-    ).toBe(false)
+    ).toBe(true)
     expect(
       fireEvent.keyDown(actionButton, { key: ' ' })
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('does not navigate when a contextual menu action runs', () => {
@@ -94,15 +119,65 @@ describe('ProjectCard', () => {
     const trigger = screen.getByRole('button', {
       name: 'Actions for Storefy',
     })
-    expect(fireEvent.click(trigger)).toBe(false)
+    expect(trigger.closest('a')).toBeNull()
 
-    expect(
-      fireEvent.click(
-        screen.getByRole('menuitem', { name: 'Delete project' })
-      )
-    ).toBe(false)
+    expect(fireEvent.click(trigger)).toBe(true)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    const deleteItem = screen.getByRole('menuitem', {
+      name: 'Delete project',
+    })
+    expect(deleteItem.closest('a')).toBeNull()
+    expect(fireEvent.click(deleteItem)).toBe(true)
 
     expect(onDelete).toHaveBeenCalledTimes(1)
     expect(onEdit).not.toHaveBeenCalled()
+  })
+
+  it('runs the edit action from the contextual menu', () => {
+    const onEdit = vi.fn()
+    const onDelete = vi.fn()
+    renderCard(
+      <ProjectCardMenu
+        projectName={project.name}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Actions for Storefy',
+      })
+    )
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: 'Edit project' })
+    )
+
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onDelete).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('button', { name: 'Actions for Storefy' })
+    ).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('shows the platform badge and description', () => {
+    renderCard()
+
+    expect(screen.getByText('Vercel')).toBeInTheDocument()
+    expect(screen.getByText('A store dashboard')).toBeInTheDocument()
+    expect(screen.getByText('Storefy')).toBeInTheDocument()
+  })
+
+  it('hides the image when the signed URL fails to load', () => {
+    renderCard()
+
+    const image = screen.getByRole('img', {
+      name: 'Storefy thumbnail',
+    })
+    fireEvent.error(image)
+
+    // The failed image is replaced by the placeholder icon.
+    expect(screen.queryAllByRole('img')).toHaveLength(0)
   })
 })

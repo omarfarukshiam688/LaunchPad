@@ -117,17 +117,54 @@ describe('validateProjectImage', () => {
 })
 
 describe('getProjectImageUrls', () => {
+  // Reproduces the real storage-js createSignedUrls()
+  // response shape: each entry carries both `signedURL`
+  // (a relative storage path) and `signedUrl` (the
+  // complete absolute URL), plus a per-object error.
+  function signedUrlEntry(
+    path: string,
+    token: string
+  ): {
+    error: string | null
+    path: string | null
+    signedURL: string | null
+    signedUrl: string | null
+  } {
+    return {
+      error: null,
+      path,
+      signedURL: `/object/sign/project-images/${path}?token=${token}`,
+      signedUrl: `https://your-ref.supabase.co/storage/v1/object/sign/project-images/${path}?token=${token}`,
+    }
+  }
+
   it('returns an empty map without calling storage when no paths are given', async () => {
     const urls = await getProjectImageUrls([])
     expect(urls).toEqual({})
     expect(mocks.supabase.storage.from).not.toHaveBeenCalled()
   })
 
+  it('maps each path to the complete signedUrl, not the relative signedURL', async () => {
+    bucket.createSignedUrls.mockResolvedValue({
+      data: [signedUrlEntry('user-1/a.png', 'token-a')],
+      error: null,
+    })
+
+    const urls = await getProjectImageUrls(['user-1/a.png'])
+
+    expect(urls).toEqual({
+      'user-1/a.png':
+        'https://your-ref.supabase.co/storage/v1/object/sign/project-images/user-1/a.png?token=token-a',
+    })
+    expect(urls['user-1/a.png']).toMatch(/^https:\/\//)
+    expect(urls['user-1/a.png']).not.toMatch(/^\/object\//)
+  })
+
   it('deduplicates paths and maps each one to its signed URL', async () => {
     bucket.createSignedUrls.mockResolvedValue({
       data: [
-        { path: 'user-1/a.png', signedURL: 'https://signed/a' },
-        { path: 'user-1/b.png', signedURL: 'https://signed/b' },
+        signedUrlEntry('user-1/a.png', 'token-a'),
+        signedUrlEntry('user-1/b.png', 'token-b'),
       ],
       error: null,
     })
@@ -139,8 +176,10 @@ describe('getProjectImageUrls', () => {
     ])
 
     expect(urls).toEqual({
-      'user-1/a.png': 'https://signed/a',
-      'user-1/b.png': 'https://signed/b',
+      'user-1/a.png':
+        'https://your-ref.supabase.co/storage/v1/object/sign/project-images/user-1/a.png?token=token-a',
+      'user-1/b.png':
+        'https://your-ref.supabase.co/storage/v1/object/sign/project-images/user-1/b.png?token=token-b',
     })
     expect(mocks.supabase.storage.from).toHaveBeenCalledWith(
       PROJECT_IMAGES_BUCKET
@@ -148,6 +187,35 @@ describe('getProjectImageUrls', () => {
     expect(bucket.createSignedUrls).toHaveBeenCalledWith(
       ['user-1/a.png', 'user-1/b.png'],
       3600
+    )
+  })
+
+  it('throws when a per-object storage error is reported', async () => {
+    bucket.createSignedUrls.mockResolvedValue({
+      data: [
+        {
+          error: 'Object not found',
+          path: 'user-1/missing.png',
+          signedURL: null,
+          signedUrl: null,
+        },
+      ],
+      error: null,
+    })
+
+    await expect(
+      getProjectImageUrls(['user-1/missing.png'])
+    ).rejects.toThrow('Object not found')
+  })
+
+  it('throws when a response entry has no signed URL', async () => {
+    bucket.createSignedUrls.mockResolvedValue({
+      data: [{ error: null, path: 'user-1/a.png', signedURL: null, signedUrl: null }],
+      error: null,
+    })
+
+    await expect(getProjectImageUrls(['user-1/a.png'])).rejects.toThrow(
+      'Could not retrieve a signed URL for a project image.'
     )
   })
 
