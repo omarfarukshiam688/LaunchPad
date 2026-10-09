@@ -253,3 +253,4 @@ supabase/
 ## License
 
 MIT — see the [LICENSE](LICENSE) file.
+# LaunchPad
